@@ -2,13 +2,16 @@ import { app, uuid, sparqlEscapeUri, sparqlEscapeString, sparqlEscapeDateTime, e
 import { querySudo as query, updateSudo as update } from '@lblod/mu-auth-sudo';
 import bodyParser from 'body-parser';
 import { Delta } from "./lib/delta";
-
-export const TASK_READY = 'http://lblod.data.gift/harvesting-statuses/ready-to-check-urls';
-
-export const TASK_ONGOING = 'http://lblod.data.gift/harvesting-statuses/checking';
-export const TASK_SUCCESS = 'http://lblod.data.gift/harvesting-statuses/success';
-export const TASK_FAILURE = 'http://lblod.data.gift/harvesting-statuses/failure';
-const TARGET_GRAPH = process.env.TARGET_GRAPH || 'http://mu.semte.ch/graphs/public';
+import { isTask, loadTask, updateTaskStatus, appendTaskError } from './lib/task';
+import {
+  STATUS_SCHEDULED,
+  TASK_HARVESTING_CHECKING_URLS,
+  STATUS_BUSY,
+  STATUS_FAILED,
+  STATUS_SUCCESS,
+  TARGET_GRAPH
+} from './constants';
+import flatten from 'lodash.flatten';
 
 app.use(bodyParser.json({
   type: function (req) {
@@ -21,32 +24,24 @@ app.get('/', function (req, res) {
 
 app.post("/delta", async (req, res, next) => {
   try {
-    const tasks = new Delta(req.body).getInsertsFor('http://www.w3.org/ns/adms#status', TASK_READY);
-    if (!tasks.length) {
-      console.log('Delta dit not contain harvesting-tasks that are ready for import, awaiting the next batch!');
+    const entries = new Delta(req.body).getInsertsFor('http://www.w3.org/ns/adms#status', STATUS_SCHEDULED);
+    if (!entries.length) {
+      console.log('Delta dit not contain potential tasks that are checking urls, awaiting the next batch!');
       return res.status(204).send();
     }
-    console.log(`Starting import for harvesting-tasks: ${tasks.join(`, `)}`);
-    for (let task of tasks) {
+    for (let entry of entries) {
       try {
-        await updateTaskStatus(task, TASK_ONGOING);
-        //await importHarvestingTask(task);
-        const result = await getFailedDownloadUrl(task);
-        if (!result.length) {
-          await updateTaskStatus(task, TASK_SUCCESS);
-        } else {
-          console.log(JSON.stringify(result));
-          await updateTaskStatus(task, TASK_FAILURE);
+        console.log(entry);
+        if (! await isTask(entry)) continue;
+        const task = await loadTask(entry);
+        if (isCheckingUrlTask(task)) {
+          await runCheckingUrlPipeline(task);
         }
+
       } catch (e) {
-        console.log(`Something unexpected went wrong while handling delta harvesting-task <${task}>`);
+        console.log(`Something unexpected went wrong while handling delta task!`);
         console.error(e);
-        try {
-          await updateTaskStatus(task, TASK_FAILURE);
-        } catch (e) {
-          console.log(`Failed to update state of task <${task}> to failure state. Is the connection to the database broken?`);
-          console.error(e);
-        }
+        return next(e);
       }
     }
     return res.status(200).send().end();
@@ -57,9 +52,11 @@ app.post("/delta", async (req, res, next) => {
   }
 });
 
+function isCheckingUrlTask(task) {
+  return task.operation == TASK_HARVESTING_CHECKING_URLS;
+}
 
-
-async function getFailedDownloadUrl(taskUri) {
+async function getFailedDownloadUrl(task) {
   const q = `
       PREFIX dct: <http://purl.org/dc/terms/>
     PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
@@ -67,8 +64,9 @@ async function getFailedDownloadUrl(taskUri) {
     PREFIX mu: <http://mu.semte.ch/vocabularies/core/>
     PREFIX nie: <http://www.semanticdesktop.org/ontologies/2007/01/19/nie#>
     select distinct  ?url WHERE {
-    ${sparqlEscapeUri(taskUri)} <http://purl.org/dc/terms/isPartOf> ?job;
-          task:inputContainer ?container.
+    ${sparqlEscapeUri(task.task)} <http://purl.org/dc/terms/isPartOf> ?job.
+    ?task <http://purl.org/dc/terms/isPartOf> ?job;
+    task:inputContainer ?container.
     ?container task:hasHarvestingCollection ?collection.
     ?collection dct:hasPart ?remoteDataObjects.
     ?remoteDataObjects  <http://www.w3.org/ns/adms#status> ?status.
@@ -81,32 +79,17 @@ async function getFailedDownloadUrl(taskUri) {
   return result.results.bindings;
 }
 
-export async function updateTaskStatus(uri, status) {
-  const q = `
-    PREFIX melding: <http://lblod.data.gift/vocabularies/automatische-melding/>
-    PREFIX adms: <http://www.w3.org/ns/adms#>
-    DELETE {
-      GRAPH ?g {
-        ${sparqlEscapeUri(uri)} adms:status ?status .
-      }
-    } WHERE {
-      GRAPH ?g {
-        ${sparqlEscapeUri(uri)} adms:status ?status .
-      }
-    }
-    ;
-    INSERT {
-      GRAPH ?g {
-        ${sparqlEscapeUri(uri)} adms:status ${sparqlEscapeUri(status)} .
-      }
-    } WHERE {
-      GRAPH ?g {
-        ${sparqlEscapeUri(uri)} a melding:HarvestingTask .
-      }
-    }
-  `;
-
-  await update(q);
+async function runCheckingUrlPipeline(task) {
+  await updateTaskStatus(task, STATUS_BUSY);
+  const result = await getFailedDownloadUrl(task);
+  console.log("result: " + JSON.stringify(result));
+  if (result && result.length) {
+    const msgs = flatten(result.map(r => r.url.value));
+    appendTaskError(task, "The following urls could not be downloaded: " + msgs.join(', '));
+    await await updateTaskStatus(task, STATUS_FAILED);
+  } else {
+    await updateTaskStatus(task, STATUS_SUCCESS);
+  }
 }
 
 app.use(errorHandler);
