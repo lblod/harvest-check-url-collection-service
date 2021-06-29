@@ -1,5 +1,5 @@
 {
-  "name": "harvest-check-url-service",
+  "name": "harvest-check-url-collection-service",
   "version": "1.0.0",
   "description": "Microservice that check if all urls were harvested, otherwise notifies the end user",
   "scripts": {
@@ -7,7 +7,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lblod/harvest-check-url-service"
+    "url": "git+https://github.com/lblod/harvest-check-url-collection-service"
   },
   "keywords": [
     "mu-semtech",

@@ -1,4 +1,4 @@
-# harvest-check-url-service
+# harvest-check-url-collection-service
 Microservice that checks if all urls were properly processed during the collecting step.
 
 
@@ -8,7 +8,7 @@ Microservice that checks if all urls were properly processed during the collecti
 Add the following snippet in your `docker-compose.yml`:
 ```
   harvest:
-    image: lblod/harvest-check-url-service
+    image: lblod/harvest-check-url-collection-service
     volumes:
       - ./data/files:/share
 ```
