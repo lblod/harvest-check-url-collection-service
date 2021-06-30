@@ -2,14 +2,15 @@ import { app, uuid, sparqlEscapeUri, sparqlEscapeString, sparqlEscapeDateTime, e
 import { querySudo as query, updateSudo as update } from '@lblod/mu-auth-sudo';
 import bodyParser from 'body-parser';
 import { Delta } from "./lib/delta";
-import { isTask, loadTask, updateTaskStatus, appendTaskError } from './lib/task';
+import { parseResult } from "./lib/utils";
+import { isTask, loadTask, updateTaskStatus, appendTaskError, appendTaskResultGraph } from './lib/task';
 import {
   STATUS_SCHEDULED,
   TASK_HARVESTING_CHECKING_URLS,
   STATUS_BUSY,
   STATUS_FAILED,
   STATUS_SUCCESS,
-  TARGET_GRAPH
+  PREFIXES
 } from './constants';
 import flatten from 'lodash.flatten';
 
@@ -82,7 +83,7 @@ async function getFailedDownloadUrl(task) {
 async function runCheckingUrlPipeline(task) {
   await updateTaskStatus(task, STATUS_BUSY);
   const result = await getFailedDownloadUrl(task);
-  console.log("result: " + JSON.stringify(result));
+ 
   if (result && result.length) {
     const msgs = flatten(result.map(r => r.url.value));
     appendTaskError(task, "The following urls could not be downloaded: " + msgs.join(', '));
@@ -90,6 +91,25 @@ async function runCheckingUrlPipeline(task) {
   } else {
     await updateTaskStatus(task, STATUS_SUCCESS);
   }
+  await appendInputContainerToResultGraph(task);
+}
+
+async function appendInputContainerToResultGraph(task){
+  const queryGraph = `
+     ${PREFIXES}
+     SELECT DISTINCT ?graph WHERE {
+        GRAPH ?g {
+          BIND(${sparqlEscapeUri(task.task)} as ?task).
+          ?task task:inputContainer ?container.
+          ?container task:hasGraph ?graph.
+        }
+     }
+  `;
+  const graphData = parseResult(await query(queryGraph))[0];
+  const graphContainer = { id: uuid() };
+  graphContainer.uri = `http://redpencil.data.gift/id/dataContainers/${graphContainer.id}`;
+  await appendTaskResultGraph(task, graphContainer, graphData.graph);
+  
 }
 
 app.use(errorHandler);
