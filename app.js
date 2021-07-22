@@ -3,7 +3,8 @@ import { querySudo as query, updateSudo as update } from '@lblod/mu-auth-sudo';
 import bodyParser from 'body-parser';
 import { Delta } from "./lib/delta";
 import { parseResult } from "./lib/utils";
-import { isTask, loadTask, updateTaskStatus, appendTaskError, appendTaskResultGraph } from './lib/task';
+import { writeFile } from "./lib/file-helper";
+import { isTask, loadTask, updateTaskStatus, appendTaskError, appendTaskResultGraph, appendTaskResultFile } from './lib/task';
 import {
   STATUS_SCHEDULED,
   TASK_HARVESTING_CHECKING_URLS,
@@ -85,9 +86,13 @@ async function runCheckingUrlPipeline(task) {
   const result = await getFailedDownloadUrl(task);
  
   if (result && result.length) {
-    const msgs = flatten(result.map(r => r.url.value));
-    appendTaskError(task, "The following urls could not be downloaded: " + msgs.join(', '));
-    await await updateTaskStatus(task, STATUS_FAILED);
+    const urls = flatten(result.map(r => r.url.value));
+    appendTaskError(task, "Some url’s failed downloading, please check report");
+    await updateTaskStatus(task, STATUS_FAILED);
+    const fileContainer = { id: uuid() };
+    fileContainer.uri = `http://redpencil.data.gift/id/dataContainers/${fileContainer.id}`;
+    const errorFile = await writeFile(task.graph, urls.join('\n'), 'report-failed-urls.txt');
+    await appendTaskResultFile(task, fileContainer, errorFile);
   } else {
     await updateTaskStatus(task, STATUS_SUCCESS);
   }
