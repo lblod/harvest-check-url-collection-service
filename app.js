@@ -16,11 +16,11 @@ import {
 import flatten from 'lodash.flatten';
 
 app.use(bodyParser.json({
-  type: function (req) {
+  type: function(req) {
     return /^application\/json/.test(req.get('content-type'));
   }
 }));
-app.get('/', function (req, res) {
+app.get('/', function(req, res) {
   res.send('Hello mu-javascript-template');
 });
 
@@ -84,23 +84,24 @@ async function getFailedDownloadUrl(task) {
 async function runCheckingUrlPipeline(task) {
   await updateTaskStatus(task, STATUS_BUSY);
   const result = await getFailedDownloadUrl(task);
- 
+
   if (result && result.length) {
     const urls = flatten(result.map(r => r.url.value));
     appendTaskError(task, "Some url’s failed downloading, please check report");
-    await updateTaskStatus(task, STATUS_FAILED);
+    // FIXME we need a new status like STATUS_INCOMPLETE. job should be marked as success in this cas
+    // await updateTaskStatus(task, STATUS_FAILED);
     const fileContainer = { id: uuid() };
     fileContainer.uri = `http://redpencil.data.gift/id/dataContainers/${fileContainer.id}`;
     const errorFile = await writeFile(task.graph, urls.join('\n'), 'report-failed-urls.txt');
     await appendTaskResultFile(task, fileContainer, errorFile);
-  } else {
+    // } else {
     await updateTaskStatus(task, STATUS_SUCCESS);
+    // }
+    await appendInputContainerToResultGraph(task);
   }
-  await appendInputContainerToResultGraph(task);
-}
 
-async function appendInputContainerToResultGraph(task){
-  const queryGraph = `
+  async function appendInputContainerToResultGraph(task) {
+    const queryGraph = `
      ${PREFIXES}
      SELECT DISTINCT ?graph WHERE {
         GRAPH ?g {
@@ -110,11 +111,11 @@ async function appendInputContainerToResultGraph(task){
         }
      }
   `;
-  const graphData = parseResult(await query(queryGraph))[0];
-  const graphContainer = { id: uuid() };
-  graphContainer.uri = `http://redpencil.data.gift/id/dataContainers/${graphContainer.id}`;
-  await appendTaskResultGraph(task, graphContainer, graphData.graph);
-  
-}
+    const graphData = parseResult(await query(queryGraph))[0];
+    const graphContainer = { id: uuid() };
+    graphContainer.uri = `http://redpencil.data.gift/id/dataContainers/${graphContainer.id}`;
+    await appendTaskResultGraph(task, graphContainer, graphData.graph);
 
-app.use(errorHandler);
+  }
+
+  app.use(errorHandler);
