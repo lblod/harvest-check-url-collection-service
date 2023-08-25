@@ -94,11 +94,10 @@ async function runCheckingUrlPipeline(task) {
     fileContainer.uri = `http://redpencil.data.gift/id/dataContainers/${fileContainer.id}`;
     const errorFile = await writeFile(task.graph, urls.join('\n'), 'report-failed-urls.txt');
     await appendTaskResultFile(task, fileContainer, errorFile);
-    // } else {
-    await updateTaskStatus(task, STATUS_SUCCESS);
-    // }
     await appendInputContainerToResultGraph(task);
   }
+  await updateTaskStatus(task, STATUS_SUCCESS);
+
 
   async function appendInputContainerToResultGraph(task) {
     const queryGraph = `
