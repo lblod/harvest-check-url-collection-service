@@ -98,9 +98,9 @@ async function runCheckingUrlPipeline(task) {
   }
   await updateTaskStatus(task, STATUS_SUCCESS);
 
-
-  async function appendInputContainerToResultGraph(task) {
-    const queryGraph = `
+}
+async function appendInputContainerToResultGraph(task) {
+  const queryGraph = `
      ${PREFIXES}
      SELECT DISTINCT ?graph WHERE {
         GRAPH ?g {
@@ -110,11 +110,11 @@ async function runCheckingUrlPipeline(task) {
         }
      }
   `;
-    const graphData = parseResult(await query(queryGraph))[0];
-    const graphContainer = { id: uuid() };
-    graphContainer.uri = `http://redpencil.data.gift/id/dataContainers/${graphContainer.id}`;
-    await appendTaskResultGraph(task, graphContainer, graphData.graph);
+  const graphData = parseResult(await query(queryGraph))[0];
+  const graphContainer = { id: uuid() };
+  graphContainer.uri = `http://redpencil.data.gift/id/dataContainers/${graphContainer.id}`;
+  await appendTaskResultGraph(task, graphContainer, graphData.graph);
 
-  }
+}
 
-  app.use(errorHandler);
+app.use(errorHandler);
